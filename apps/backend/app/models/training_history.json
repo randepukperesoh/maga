@@ -1,0 +1,20 @@
+{
+  "model_version": "trained-20260401-183508",
+  "points": [
+    {
+      "step": 1,
+      "loss": 0.87778,
+      "accuracy": 0.55989
+    },
+    {
+      "step": 2,
+      "loss": 0.85611,
+      "accuracy": 0.56956
+    },
+    {
+      "step": 3,
+      "loss": 0.83497,
+      "accuracy": 0.57902
+    }
+  ]
+}

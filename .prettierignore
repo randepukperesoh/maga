@@ -1,0 +1,7 @@
+node_modules
+dist
+build
+coverage
+apps/**/node_modules
+apps/**/dist
+pnpm-lock.yaml
