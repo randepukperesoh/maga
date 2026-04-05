@@ -818,7 +818,7 @@ def _predict_for_load_map(
         defect_count_feature = 0.0
         known_defects = float(defect_count_by_rod.get(rod.id, 0)) if defect_count_by_rod else 0.0
         if known_defects > 0:
-            defect_count_feature = min(1.0, 0.2 * known_defects)
+            defect_count_feature = min(1.0, 0.25 * known_defects)
             hot_boost += min(0.12, 0.04 * known_defects)
 
         anomaly_feature = min(1.0, 0.55 * residual_feature + 0.25 * jump_feature + 0.20 * strain_feature)
@@ -838,7 +838,7 @@ def _predict_for_load_map(
                 + _coeff(inference_coeffs, "length", 0.0) * slenderness
                 + _coeff(inference_coeffs, "area", 0.0) * area_factor
                 + _coeff(inference_coeffs, "load", 0.0) * load_factor
-                + _coeff(inference_coeffs, "defect", 0.0) * defect_signal
+                + _coeff(inference_coeffs, "defect", 0.0) * defect_feature
                 + _coeff(inference_coeffs, "residual", 0.0) * residual_feature
                 + _coeff(inference_coeffs, "jump", 0.0) * jump_feature
                 + _coeff(inference_coeffs, "strain", 0.0) * strain_feature
@@ -990,98 +990,85 @@ def predict_defect(
     base_analysis: object | None = None,
     defect_positions_by_rod: dict[str, list[float]] | None = None,
 ) -> dict:
-    # Force deterministic mock inference that points close to real defects.
     _hydrate_runtime_snapshot()
     active_version = _state_str("active_inference_model", _BASELINE_VERSION)
     active_model = _MODELS.get(active_version, _MODELS[_BASELINE_VERSION])
 
-    defect_positions_by_rod = defect_positions_by_rod or {}
-    actual_positive = {
-        rid for rid, positions in defect_positions_by_rod.items() if isinstance(positions, list) and len(positions) > 0
-    }
-    if not actual_positive and defect_count_by_rod:
-        actual_positive = {rid for rid, c in defect_count_by_rod.items() if c > 0}
-
-    neighbor_rods = _mock_neighbor_rods(request, actual_positive)
-
-    # If there are no known defects at all, pick one likely rod near maximum load.
-    if not actual_positive and request.rods:
-        load_map = _build_step_load_map(request, load_factor=1.0)
-        ranked = sorted(
-            request.rods,
-            key=lambda r: max(load_map.get(r.start_node_id, 0.0), load_map.get(r.end_node_id, 0.0)),
-            reverse=True,
+    defect_prior = 1.0 - _NOTEBOOK_SIGNALS.class_priors.get(0, 0.25)
+    weights = active_model["weights"]
+    inference_coeffs, artifact_meta = _artifact_coefficients(active_model)
+    inference_source = "model-artifact"
+    if not inference_coeffs:
+        inference_coeffs, artifact_meta = _checkpoint_coefficients_for_model(
+            active_model["model_version"]
         )
-        actual_positive = {ranked[0].id}
-        neighbor_rods = _mock_neighbor_rods(request, actual_positive)
+        inference_source = "checkpoint"
+    has_inference_coeffs = bool(inference_coeffs)
+    if not has_inference_coeffs:
+        inference_source = "heuristic"
 
-    target_count = min(5, len(request.rods))
-    target_rods = _mock_select_target_rods(request, actual_positive, neighbor_rods, target_count)
+    node_displacements = getattr(base_analysis, "node_displacements", {}) if base_analysis else {}
+    if not isinstance(node_displacements, dict):
+        node_displacements = {}
 
-    all_real_positions = [
-        float(pos)
-        for positions in defect_positions_by_rod.values()
-        if isinstance(positions, list)
-        for pos in positions[:1]
-    ]
-    fallback_center = sum(all_real_positions) / len(all_real_positions) if all_real_positions else 0.5
+    if not node_displacements:
+        try:
+            fresh_analysis = run_fem(request)
+            node_displacements = getattr(fresh_analysis, "node_displacements", {})
+            if not isinstance(node_displacements, dict):
+                node_displacements = {}
+            if base_analysis is None:
+                base_analysis = fresh_analysis
+        except Exception:
+            node_displacements = {}
+            _log("warning", "FEM inference fallback failed, using zero node displacement state")
 
-    base_risk_by_rod: dict[str, float] = {}
-    risk_heatmap: list[dict] = []
-    feature_snapshot: dict[str, dict[str, float | bool]] = {}
-
-    for rod in request.rods:
-        u = _stable_unit(f"mock:{rod.id}")
-        if rod.id in actual_positive:
-            risk = 0.93 + 0.06 * u
-            base_pos = fallback_center
-            positions = defect_positions_by_rod.get(rod.id, [])
-            if positions:
-                base_pos = max(0.05, min(0.95, float(positions[0])))
-            jitter = (_stable_unit(f"mock-pos:{rod.id}") - 0.5) * 0.12
-            center = max(0.05, min(0.95, base_pos + jitter))
-            anomaly = 0.97
-        elif rod.id in target_rods:
-            risk = 0.82 + 0.08 * u
-            center = max(0.05, min(0.95, fallback_center + (_stable_unit(f"mock-nei-pos:{rod.id}") - 0.5) * 0.18))
-            anomaly = 0.86
-        else:
-            risk = 0.06 + 0.18 * u
-            center = 0.5 + (_stable_unit(f"mock-bg-pos:{rod.id}") - 0.5) * 0.18
-            anomaly = 0.18
-
-        floor = 0.7 if rod.id in target_rods else 0.01
-        final_risk = round(max(floor, min(0.99, risk)), 4)
-        base_risk_by_rod[rod.id] = final_risk
-        risk_heatmap.append({"rod_id": rod.id, "segments": _mock_segments(center, final_risk, rod.id)})
-        feature_snapshot[rod.id] = {
-            "sensor_coverage": 1.0,
-            "residual_feature": round(anomaly, 4),
-            "jump_feature": round(min(0.99, anomaly * 0.9), 4),
-            "strain_feature": round(min(0.99, anomaly * 0.85), 4),
-            "anomaly_feature": round(anomaly, 4),
-            "position_center": round(center, 4),
-        }
+    base_load_map = _build_step_load_map(request, load_factor=1.0)
+    risk_by_rod, risk_heatmap, feature_snapshot = _predict_for_load_map(
+        request,
+        base_load_map,
+        node_displacements,
+        defect_count_by_rod=defect_count_by_rod,
+        defect_prior=defect_prior,
+        weights=weights,
+        has_inference_coeffs=has_inference_coeffs,
+        inference_coeffs=inference_coeffs,
+    )
 
     probable_position_by_rod = _probable_positions_from_heatmap(risk_heatmap)
-    sorted_risks = sorted(base_risk_by_rod.items(), key=lambda x: x[1], reverse=True)
+    sorted_risks = sorted(risk_by_rod.items(), key=lambda x: x[1], reverse=True)
     top = sorted_risks[: min(5, len(sorted_risks))]
-    threshold = 0.82
 
-    predicted_positive = {rid for rid, risk in base_risk_by_rod.items() if risk >= threshold}
-    has_labeled_defects = bool(actual_positive)
+    threshold_raw = artifact_meta.get("decision_threshold", 0.6)
+    try:
+        threshold = float(threshold_raw)
+    except (TypeError, ValueError):
+        threshold = 0.6
+    threshold = max(0.01, min(0.99, threshold))
 
-    evaluation: dict | None
-    if has_labeled_defects:
+    predicted_positive = {rod_id for rod_id, risk in risk_by_rod.items() if risk >= threshold}
+    defect_positions_by_rod = defect_positions_by_rod or {}
+    actual_positive = {
+        rid
+        for rid, positions in defect_positions_by_rod.items()
+        if isinstance(positions, list) and len(positions) > 0
+    }
+    if not actual_positive and defect_count_by_rod:
+        actual_positive = {
+            rod_id for rod_id, count in defect_count_by_rod.items() if count > 0
+        }
+
+    evaluation: dict | None = None
+    if actual_positive:
         tp = len(predicted_positive & actual_positive)
         fp = len(predicted_positive - actual_positive)
         fn = len(actual_positive - predicted_positive)
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-        top_k_hit = any(rid in actual_positive for rid, _ in top)
+        top_k_hit = any(rod_id in actual_positive for rod_id, _ in top)
         evaluation = {
-            "threshold": threshold,
+            "threshold": round(threshold, 4),
             "true_positive": tp,
             "false_positive": fp,
             "false_negative": fn,
@@ -1092,27 +1079,39 @@ def predict_defect(
             "actual_defect_rods": len(actual_positive),
             "predicted_defect_rods": len(predicted_positive),
         }
-    else:
-        evaluation = None
 
     quasi_static_steps: list[dict] = []
+    step_node_displacements: dict[int, dict[str, object]] = {}
+    raw_step_results = getattr(base_analysis, "quasi_static_steps", []) if base_analysis else []
+    if isinstance(raw_step_results, list):
+        for row in raw_step_results:
+            step_index = getattr(row, "step_index", None)
+            row_nodes = getattr(row, "node_displacements", None)
+            if isinstance(step_index, int) and isinstance(row_nodes, dict):
+                step_node_displacements[step_index] = row_nodes
+
     if request.analysis_type == "quasi_static":
         raw_steps = request.quasi_static_steps or []
         for idx, step in enumerate(raw_steps, start=1):
             step_index = step.step_index if step.step_index is not None else idx
             step_name = step.name or f"Step {step_index}"
-            step_risk_by_rod: dict[str, float] = {}
-            step_heatmap: list[dict] = []
-            step_features: dict[str, dict[str, float | bool]] = {}
-
-            for rod in request.rods:
-                base = base_risk_by_rod.get(rod.id, 0.72)
-                s_risk = _mock_step_risk(base, step.load_factor, rod.id, step_index)
-                center = float(feature_snapshot.get(rod.id, {}).get("position_center", 0.5))
-                step_risk_by_rod[rod.id] = s_risk
-                step_heatmap.append({"rod_id": rod.id, "segments": _mock_segments(center, s_risk, f"{rod.id}:s{step_index}")})
-                step_features[rod.id] = dict(feature_snapshot.get(rod.id, {}))
-
+            step_load_map = _build_step_load_map(
+                request,
+                load_factor=step.load_factor,
+                load_fx=step.load_fx,
+                load_fy=step.load_fy,
+            )
+            step_nodes = step_node_displacements.get(step_index, node_displacements)
+            step_risk_by_rod, step_heatmap, step_features = _predict_for_load_map(
+                request,
+                step_load_map,
+                step_nodes,
+                defect_count_by_rod=defect_count_by_rod,
+                defect_prior=defect_prior,
+                weights=weights,
+                has_inference_coeffs=has_inference_coeffs,
+                inference_coeffs=inference_coeffs,
+            )
             step_probable_position = _probable_positions_from_heatmap(step_heatmap)
             step_top = sorted(step_risk_by_rod.items(), key=lambda x: x[1], reverse=True)[: min(5, len(step_risk_by_rod))]
             quasi_static_steps.append(
@@ -1145,7 +1144,7 @@ def predict_defect(
     ]
 
     return {
-        "risk_by_rod": base_risk_by_rod,
+        "risk_by_rod": risk_by_rod,
         "risk_heatmap": risk_heatmap,
         "probable_defect_position_by_rod": probable_position_by_rod,
         "top_risky_rods": top_payload,
@@ -1153,23 +1152,24 @@ def predict_defect(
         "analysis_type": request.analysis_type,
         "quasi_static_steps": quasi_static_steps,
         "model": active_model["model_version"],
-        "inference_source": "mock-defect-guided",
+        "inference_source": inference_source,
         "model_metadata": {
-            "dataset_size": None,
-            "defect_rate": None,
+            "dataset_size": artifact_meta.get("dataset_size"),
+            "defect_rate": artifact_meta.get("defect_rate"),
         },
         "evaluation": evaluation,
         "feature_snapshot": feature_snapshot,
         "notebook_signals": {
-            "defect_prior": 0.0,
+            "defect_prior": round(defect_prior, 4),
             "hot_kernels_count": len(_NOTEBOOK_SIGNALS.defect_hot_kernels),
         },
     }
 
-
 _hydrate_runtime_snapshot()
 _bootstrap_model_from_checkpoint()
 _persist_runtime_snapshot()
+
+
 
 
 

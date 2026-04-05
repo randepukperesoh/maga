@@ -1,12 +1,12 @@
 {
-  "model_version": "notebook-informed-20260405185847",
-  "trained_steps": 634,
+  "model_version": "notebook-informed-20260405192418",
+  "trained_steps": 643,
   "weights": {
-    "bias": -0.42634,
-    "length": 1.155077,
-    "area": -4.622466,
-    "load": 3.148875,
-    "defect": 24.355314
+    "bias": -0.389054,
+    "length": 1.184103,
+    "area": -4.822151,
+    "load": 3.238161,
+    "defect": 25.29431
   },
   "artifact": {
     "kind": "linear-risk-v3",
@@ -18,11 +18,11 @@
       "defect"
     ],
     "coefficients": {
-      "bias": -0.42634,
-      "length": 1.155077,
-      "area": -4.622466,
-      "load": 3.148875,
-      "defect": 24.355314
+      "bias": -0.389054,
+      "length": 1.184103,
+      "area": -4.822151,
+      "load": 3.238161,
+      "defect": 25.29431
     },
     "metadata": {
       "dataset_size": 1601,
@@ -42,8 +42,8 @@
       },
       "calibration": {
         "method": "platt",
-        "a": 1.108756,
-        "b": -0.411275
+        "a": 1.006817,
+        "b": -0.375557
       },
       "decision_threshold": 0.81,
       "class_weights": {
@@ -52,15 +52,15 @@
       },
       "metrics": {
         "train": {
-          "log_loss": 0.040108,
-          "accuracy": 1.0,
-          "balanced_accuracy": 1.0,
-          "precision": 1.0,
+          "log_loss": 0.037703,
+          "accuracy": 0.999694,
+          "balanced_accuracy": 0.997585,
+          "precision": 0.999673,
           "recall": 1.0,
-          "f1": 1.0
+          "f1": 0.999837
         },
         "validation": {
-          "log_loss": 0.219995,
+          "log_loss": 0.219537,
           "accuracy": 0.961446,
           "balanced_accuracy": 0.931389,
           "precision": 1.0,
