@@ -6,6 +6,8 @@
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "dev:training": "pnpm --filter training-dashboard dev",
+    "dev:local": "powershell -ExecutionPolicy Bypass -File .\\scripts\\dev-local.ps1",
+    "dev:local:web-only": "powershell -ExecutionPolicy Bypass -File .\\scripts\\dev-local.ps1 -SkipTrainingDashboard",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "lint:js": "eslint apps/web/src apps/training-dashboard/src --ext .ts,.tsx",
