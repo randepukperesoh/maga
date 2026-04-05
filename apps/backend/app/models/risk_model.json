@@ -1,15 +1,15 @@
 {
-  "model_version": "notebook-informed-20260403182045",
-  "trained_steps": 48,
+  "model_version": "notebook-informed-20260405185847",
+  "trained_steps": 634,
   "weights": {
-    "bias": 0.11,
-    "length": 0.358,
-    "area": 0.2968,
-    "load": 0.2,
-    "defect": 0.3066
+    "bias": -0.42634,
+    "length": 1.155077,
+    "area": -4.622466,
+    "load": 3.148875,
+    "defect": 24.355314
   },
   "artifact": {
-    "kind": "linear-risk-v2",
+    "kind": "linear-risk-v3",
     "feature_order": [
       "bias",
       "length",
@@ -18,18 +18,56 @@
       "defect"
     ],
     "coefficients": {
-      "bias": 0.11,
-      "length": 0.358,
-      "area": 0.2968,
-      "load": 0.2,
-      "defect": 0.3066
+      "bias": -0.42634,
+      "length": 1.155077,
+      "area": -4.622466,
+      "load": 3.148875,
+      "defect": 24.355314
     },
     "metadata": {
-      "dataset_size": 0,
-      "defect_rate": 0.75,
+      "dataset_size": 1601,
+      "defect_rate": 0.936629,
       "notebook_defect_prior": 0.75,
       "learning_rate": 0.05,
-      "epochs": 3
+      "epochs": 3,
+      "split_mode": "group_temporal",
+      "dataset_rows": 12758,
+      "train_rows": 6533,
+      "val_rows": 6225,
+      "dataset_hash": "ac00572075ca78f328f4caf232058d5346b729ab4fcdec10b3d6ad68d67a6646",
+      "regularization": {
+        "l2": 0.02,
+        "drift": 0.06,
+        "max_drift": 0.35
+      },
+      "calibration": {
+        "method": "platt",
+        "a": 1.108756,
+        "b": -0.411275
+      },
+      "decision_threshold": 0.81,
+      "class_weights": {
+        "negative": 4.0,
+        "positive": 0.533829
+      },
+      "metrics": {
+        "train": {
+          "log_loss": 0.040108,
+          "accuracy": 1.0,
+          "balanced_accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "validation": {
+          "log_loss": 0.219995,
+          "accuracy": 0.961446,
+          "balanced_accuracy": 0.931389,
+          "precision": 1.0,
+          "recall": 0.862779,
+          "f1": 0.926335
+        }
+      }
     }
   }
 }

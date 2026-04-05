@@ -6,6 +6,7 @@ from app.schemas.analysis import (
     CalculationRequest,
     CalculationResponse,
     NodalLoad,
+    NodeDisplacementInfo,
     QuasiStaticStep,
     QuasiStaticStepResult,
 )
@@ -51,9 +52,48 @@ def _assemble_stiffness(request: CalculationRequest, node_index: dict[str, int])
     return k_global
 
 
+def _build_node_displacements(
+    request: CalculationRequest, node_index: dict[str, int], u: np.ndarray
+) -> dict[str, NodeDisplacementInfo]:
+    result: dict[str, NodeDisplacementInfo] = {}
+
+    for node in request.nodes:
+        idx = node_index[node.id]
+        ux = float(u[2 * idx])
+        uy = float(u[2 * idx + 1])
+
+        sensor = request.node_sensors.get(node.id)
+        sensor_available = sensor is not None
+        dx = float(sensor.dx) if sensor is not None else None
+        dy = float(sensor.dy) if sensor is not None else None
+        rx = (dx - ux) if dx is not None else None
+        ry = (dy - uy) if dy is not None else None
+        r_norm = float(math.hypot(rx, ry)) if rx is not None and ry is not None else None
+
+        result[node.id] = NodeDisplacementInfo(
+            ux=ux,
+            uy=uy,
+            displacement=float(math.hypot(ux, uy)),
+            sensor_available=sensor_available,
+            dx=dx,
+            dy=dy,
+            rx=rx,
+            ry=ry,
+            r_norm=r_norm,
+        )
+
+    return result
+
+
 def _run_static_fem(request: CalculationRequest) -> CalculationResponse:
     if not request.nodes:
-        return CalculationResponse(displacements={}, stresses={}, analysis_type="static", quasi_static_steps=[])
+        return CalculationResponse(
+            displacements={},
+            node_displacements={},
+            stresses={},
+            analysis_type="static",
+            quasi_static_steps=[],
+        )
 
     node_index = {node.id: idx for idx, node in enumerate(request.nodes)}
     dof = 2 * len(request.nodes)
@@ -117,12 +157,16 @@ def _run_static_fem(request: CalculationRequest) -> CalculationResponse:
         axial_strain = (c * (u[2 * j] - u[2 * i]) + s * (u[2 * j + 1] - u[2 * i + 1])) / length
         stresses[rod.id] = rod.elastic_modulus * axial_strain
 
-    displacements = {
-        node.id: float(math.hypot(u[2 * idx], u[2 * idx + 1]))
-        for idx, node in enumerate(request.nodes)
-    }
+    node_displacements = _build_node_displacements(request, node_index, u)
+    displacements = {node_id: info.displacement for node_id, info in node_displacements.items()}
 
-    return CalculationResponse(displacements=displacements, stresses=stresses, analysis_type="static", quasi_static_steps=[])
+    return CalculationResponse(
+        displacements=displacements,
+        node_displacements=node_displacements,
+        stresses=stresses,
+        analysis_type="static",
+        quasi_static_steps=[],
+    )
 
 
 def _default_quasi_static_steps() -> list[QuasiStaticStep]:
@@ -150,7 +194,13 @@ def run_fem(request: CalculationRequest) -> CalculationResponse:
 
     steps = request.quasi_static_steps or _default_quasi_static_steps()
     step_results: list[QuasiStaticStepResult] = []
-    last_result = CalculationResponse(displacements={}, stresses={}, analysis_type="static", quasi_static_steps=[])
+    last_result = CalculationResponse(
+        displacements={},
+        node_displacements={},
+        stresses={},
+        analysis_type="static",
+        quasi_static_steps=[],
+    )
 
     for idx, step in enumerate(steps, start=1):
         normalized_step_index = step.step_index if step.step_index is not None else idx
@@ -169,12 +219,14 @@ def run_fem(request: CalculationRequest) -> CalculationResponse:
                 name=step_name,
                 load_factor=step.load_factor,
                 displacements=last_result.displacements,
+                node_displacements=last_result.node_displacements,
                 stresses=last_result.stresses,
             )
         )
 
     return CalculationResponse(
         displacements=last_result.displacements,
+        node_displacements=last_result.node_displacements,
         stresses=last_result.stresses,
         analysis_type="quasi_static",
         quasi_static_steps=step_results,

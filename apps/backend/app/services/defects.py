@@ -83,6 +83,7 @@ def apply_defects_to_result(
     adjusted_final = _adjust_stresses(request, base.stresses, store)
     return CalculationResponse(
         displacements=base.displacements,
+        node_displacements=base.node_displacements,
         stresses=adjusted_final,
         analysis_type=base.analysis_type,
         quasi_static_steps=adjusted_steps,

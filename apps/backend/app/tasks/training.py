@@ -13,6 +13,7 @@ def run_model_training_task(
     dataset_size: int = 0,
     defect_rate: float | None = None,
     notebook_defect_prior: float | None = None,
+    dataset_items: list[dict] | None = None,
 ) -> dict:
     return run_training_job(
         epochs=epochs,
@@ -23,4 +24,5 @@ def run_model_training_task(
         dataset_size=dataset_size,
         defect_rate=defect_rate,
         notebook_defect_prior=notebook_defect_prior,
+        dataset_items=dataset_items,
     )

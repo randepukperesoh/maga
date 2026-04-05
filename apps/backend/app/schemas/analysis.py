@@ -41,6 +41,23 @@ class QuasiStaticStep(AnalysisBaseModel):
     load_fy: float | None = Field(default=None, alias="loadFy")
 
 
+class NodeSensorReading(AnalysisBaseModel):
+    dx: float
+    dy: float
+
+
+class NodeDisplacementInfo(AnalysisBaseModel):
+    ux: float
+    uy: float
+    displacement: float
+    sensor_available: bool = Field(alias="sensorAvailable")
+    dx: float | None = None
+    dy: float | None = None
+    rx: float | None = None
+    ry: float | None = None
+    r_norm: float | None = Field(default=None, alias="rNorm")
+
+
 class CalculationRequest(AnalysisBaseModel):
     nodes: list[Node]
     rods: list[Rod]
@@ -48,6 +65,7 @@ class CalculationRequest(AnalysisBaseModel):
     constraints: list[Constraint] = []
     analysis_type: Literal["static", "quasi_static"] = Field(default="static", alias="analysisType")
     quasi_static_steps: list[QuasiStaticStep] = Field(default_factory=list, alias="quasiStaticSteps")
+    node_sensors: dict[str, NodeSensorReading] = Field(default_factory=dict, alias="nodeSensors")
 
 
 class QuasiStaticStepResult(AnalysisBaseModel):
@@ -55,11 +73,13 @@ class QuasiStaticStepResult(AnalysisBaseModel):
     name: str
     load_factor: float = Field(alias="loadFactor")
     displacements: dict[str, float]
+    node_displacements: dict[str, NodeDisplacementInfo] = Field(alias="nodeDisplacements")
     stresses: dict[str, float]
 
 
 class CalculationResponse(AnalysisBaseModel):
     displacements: dict[str, float]
+    node_displacements: dict[str, NodeDisplacementInfo] = Field(alias="nodeDisplacements")
     stresses: dict[str, float]
     analysis_type: Literal["static", "quasi_static"] = Field(default="static", alias="analysisType")
     quasi_static_steps: list[QuasiStaticStepResult] = Field(default_factory=list, alias="quasiStaticSteps")

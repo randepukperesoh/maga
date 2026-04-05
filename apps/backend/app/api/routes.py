@@ -136,8 +136,18 @@ def recalculate(request: CalculationRequest) -> CalculationResponse:
 @router.post("/predict-defect")
 def predict(request: CalculationRequest) -> dict:
     normalized = _normalize_default_quasi_static_request(request)
+    base_analysis = run_fem(normalized)
     defect_count_by_rod = {rod.id: len(defects.by_rod(rod.id)) for rod in normalized.rods}
-    return predict_defect(normalized, defect_count_by_rod=defect_count_by_rod)
+    defect_positions_by_rod = {
+        rod.id: [float(d.params.get("position", 0.5)) for d in defects.by_rod(rod.id)]
+        for rod in normalized.rods
+    }
+    return predict_defect(
+        normalized,
+        defect_count_by_rod=defect_count_by_rod,
+        base_analysis=base_analysis,
+        defect_positions_by_rod=defect_positions_by_rod,
+    )
 
 
 @router.get("/training/status", response_model=TrainingStatusResponse)
@@ -339,7 +349,16 @@ def run_quasi_static_scenario(scenario_id: str, payload: QuasiStaticRunRequest) 
     prediction = None
     if payload.run_inference:
         defect_count_by_rod = {rod.id: len(defects.by_rod(rod.id)) for rod in request.rods}
-        prediction = predict_defect(request, defect_count_by_rod=defect_count_by_rod)
+        defect_positions_by_rod = {
+            rod.id: [float(d.params.get("position", 0.5)) for d in defects.by_rod(rod.id)]
+            for rod in request.rods
+        }
+        prediction = predict_defect(
+            request,
+            defect_count_by_rod=defect_count_by_rod,
+            base_analysis=analysis,
+            defect_positions_by_rod=defect_positions_by_rod,
+        )
 
     saved = add_quasi_static_run(
         {
